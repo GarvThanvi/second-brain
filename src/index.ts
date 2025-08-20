@@ -5,6 +5,7 @@ import bcrypt from "bcrypt";
 import connectDB from "./db.js";
 import User from "./models/user.model.js";
 import * as z from "zod";
+import { authMiddleware } from "./middleware.js";
 dotenv.config();
 
 const app = express();
@@ -13,7 +14,7 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
-const userSchema = z.object({
+const signUpSchema = z.object({
   username: z
     .string()
     .min(3, "Username too short")
@@ -38,11 +39,16 @@ const userSchema = z.object({
     ),
 });
 
-type UserType = z.infer<typeof userSchema>;
+const signinSchema = z.object({
+  username: z.string().min(3).max(10),
+  password: z.string().min(1, "Password is required"),
+});
+
+type UserType = z.infer<typeof signUpSchema>;
 
 app.post("/api/v1/signup", async (req, res) => {
   try {
-    const result: any = userSchema.safeParse(req.body);
+    const result: any = signUpSchema.safeParse(req.body);
 
     if (!result.success) {
       return res.status(411).json({
@@ -59,7 +65,7 @@ app.post("/api/v1/signup", async (req, res) => {
         .json({ success: false, message: "Username already exists" });
     }
 
-    const hashedPassword = await bcrypt.hash(userData.password, 10);
+    const hashedPassword: string = await bcrypt.hash(userData.password, 10);
 
     await User.create({
       username: userData.username,
@@ -77,8 +83,61 @@ app.post("/api/v1/signup", async (req, res) => {
   }
 });
 
-app.post("/api/v1/singin", (req, res) => {});
-app.post("/api/v1/content", (req, res) => {});
+app.post("/api/v1/signin", async (req, res) => {
+  try {
+    const result = signinSchema.safeParse(req.body);
+    if (!result.success) {
+      return res.status(411).json({
+        success: false,
+        message: "Incorrect username or password format",
+      });
+    }
+
+    const userData: UserType = result.data;
+
+    const userExists = await User.findOne({ username: userData.username });
+    if (!userExists) {
+      return res
+        .status(401)
+        .json({ success: false, message: "Wrong email or password" });
+    }
+
+    const isMatch = await bcrypt.compare(
+      userData.password,
+      userExists.password
+    );
+    if (!isMatch) {
+      return res
+        .status(401)
+        .json({ success: false, message: "Wrong email or password" });
+    }
+
+    const token = jwt.sign(
+      {
+        id: userExists._id,
+      },
+      process.env.JWT_SECRET as string
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "User signed in successfully",
+      user: userData.username,
+      token,
+    });
+  } catch (error) {
+    console.error("Server error while signing in ", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while signing in",
+    });
+  }
+});
+
+app.post("/api/v1/content", authMiddleware,  (req, res) => {
+  //@ts-ignore
+  console.log(req.userId);
+});
 app.get("/api/v1/content", (req, res) => {});
 app.delete("/api/v1/content", (req, res) => {});
 app.post("/api/v1/brain/share", (req, res) => {});
