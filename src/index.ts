@@ -8,7 +8,9 @@ import * as z from "zod";
 import { authMiddleware } from "./middleware.js";
 import Content from "./models/content.model.js";
 import Tag from "./models/tag.model.js";
+import * as crypto from "crypto";
 import mongoose from "mongoose";
+import Link from "./models/link.model.js";
 dotenv.config();
 
 const app = express();
@@ -188,35 +190,6 @@ app.get("/api/v1/content", authMiddleware, async (req, res) => {
   //@ts-ignore
   const userId = req.userId;
   try {
-    const { contentId } = req.body;
-    const contentDoc = await Content.findOne({
-      $and: [{ _id: contentId }, { userId }],
-    });
-
-    if (!contentDoc) {
-      return res
-        .status(404)
-        .json({ success: false, message: "No such content found" });
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: "Content successfully retrieved",
-      content: contentDoc,
-    });
-  } catch (error) {
-    console.error("Server error while fetching content", error);
-    return res.status(500).json({
-      success: false,
-      message: "Server error while fetching content",
-    });
-  }
-});
-
-app.get("/api/v1/all-contents", authMiddleware, async (req, res) => {
-  //@ts-ignore
-  const userId = req.userId;
-  try {
     const contentDocs = await Content.find({ userId });
 
     return res.status(200).json({
@@ -238,6 +211,16 @@ app.delete("/api/v1/content", authMiddleware, async (req, res) => {
   const userId = req.userId;
   try {
     const { contentId } = req.body;
+
+    const contentDoc = await Content.findOne({
+      $and: [{ _id: contentId }, { userId }],
+    });
+    if (!contentDoc) {
+      return res
+        .status(404)
+        .json({ success: false, message: "No such content found to delete" });
+    }
+
     await Content.deleteOne({
       $and: [{ _id: contentId }, { userId }],
     });
@@ -254,8 +237,70 @@ app.delete("/api/v1/content", authMiddleware, async (req, res) => {
     });
   }
 });
-app.post("/api/v1/brain/share", (req, res) => {});
-app.get("/api/v1/brain/:shareLink", (req, res) => {});
+app.post("/api/v1/brain/share", authMiddleware, async (req, res) => {
+  //@ts-ignore
+  const userId = req.userId;
+  try {
+    const contentDocs = await Content.find({ userId });
+    if (!contentDocs || contentDocs.length === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "No content to share" });
+    }
+
+    const token = crypto.randomUUID();
+
+    let link = await Link.findOne({ userId });
+    if (!link) {
+      link = await Link.create({ hash: token, userId });
+    } else {
+      link.hash = token;
+    }
+    await link.save();
+
+    return res.status(200).json({
+      success: true,
+      link: `${process.env.FRONTEND_URL}/share/${token}`,
+    });
+  } catch (error) {
+    console.error("Server error while generating share link ", error);
+    return res.status(500).json({
+      success: true,
+      message: "Server errir while generating share link",
+    });
+  }
+});
+app.get("/api/v1/brain/:token", async (req, res) => {
+  try {
+    const { token } = req.params;
+
+    const link = await Link.findOne({ hash: token }).populate(
+      "userId",
+      "username"
+    );
+
+    if (!link) {
+      return res
+        .status(404)
+        .json({ success: false, message: "No such brain exists" });
+    }
+
+    //@ts-ignore
+    const contentDocs = await Content.find({ userId: link.userId._id });
+
+    return res.status(200).json({
+      success: true,
+      message: "Shared brain retrieved successfully",
+      //@ts-ignore
+      data: { username: link.userId.username, content: contentDocs },
+    });
+  } catch (error) {
+    console.error("Server error while fetching shared brain", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Server while fetching shared brain" });
+  }
+});
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
