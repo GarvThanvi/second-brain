@@ -6,6 +6,9 @@ import connectDB from "./db.js";
 import User from "./models/user.model.js";
 import * as z from "zod";
 import { authMiddleware } from "./middleware.js";
+import Content from "./models/content.model.js";
+import Tag from "./models/tag.model.js";
+import mongoose from "mongoose";
 dotenv.config();
 
 const app = express();
@@ -134,12 +137,123 @@ app.post("/api/v1/signin", async (req, res) => {
   }
 });
 
-app.post("/api/v1/content", authMiddleware,  (req, res) => {
+interface contentInterface {
+  type: string;
+  link: string;
+  title: string;
+  tags: string[];
+}
+
+app.post("/api/v1/content", authMiddleware, async (req, res) => {
   //@ts-ignore
-  console.log(req.userId);
+  const userId = req.userId;
+  try {
+    const { type, link, title, tags } = req.body as contentInterface;
+
+    if (!type || !link || !title || !tags) {
+      return res
+        .status(411)
+        .json({ success: false, message: "Some fields are missing" });
+    }
+
+    const tagIds: mongoose.Types.ObjectId[] = [];
+    if (tags && tags.length > 0) {
+      for (const tag of tags) {
+        let tagDoc = await Tag.findOne({ title: tag });
+        if (!tagDoc) {
+          tagDoc = await Tag.create({ title: tag });
+        }
+        tagIds.push(tagDoc._id);
+      }
+    }
+
+    await Content.create({
+      type,
+      link,
+      title,
+      tags: tagIds,
+      userId,
+    });
+
+    return res.status(200).json({ success: true, message: "Content Created" });
+  } catch (error) {
+    console.error(error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Server error while creating content" });
+  }
 });
-app.get("/api/v1/content", (req, res) => {});
-app.delete("/api/v1/content", (req, res) => {});
+
+app.get("/api/v1/content", authMiddleware, async (req, res) => {
+  //@ts-ignore
+  const userId = req.userId;
+  try {
+    const { contentId } = req.body;
+    const contentDoc = await Content.findOne({
+      $and: [{ _id: contentId }, { userId }],
+    });
+
+    if (!contentDoc) {
+      return res
+        .status(404)
+        .json({ success: false, message: "No such content found" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Content successfully retrieved",
+      content: contentDoc,
+    });
+  } catch (error) {
+    console.error("Server error while fetching content", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching content",
+    });
+  }
+});
+
+app.get("/api/v1/all-contents", authMiddleware, async (req, res) => {
+  //@ts-ignore
+  const userId = req.userId;
+  try {
+    const contentDocs = await Content.find({ userId });
+
+    return res.status(200).json({
+      success: true,
+      message: "All Content retrieved successfully",
+      contents: contentDocs,
+    });
+  } catch (error) {
+    console.error("Server error while fetching all contents", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching all contents",
+    });
+  }
+});
+
+app.delete("/api/v1/content", authMiddleware, async (req, res) => {
+  //@ts-ignore
+  const userId = req.userId;
+  try {
+    const { contentId } = req.body;
+    await Content.deleteOne({
+      $and: [{ _id: contentId }, { userId }],
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Content deleted successfully",
+    });
+  } catch (error) {
+    console.error("Server error while deleting content", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while deleting content",
+    });
+  }
+});
 app.post("/api/v1/brain/share", (req, res) => {});
 app.get("/api/v1/brain/:shareLink", (req, res) => {});
 
