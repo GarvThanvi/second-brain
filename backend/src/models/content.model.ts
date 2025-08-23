@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import User from "./user.model.js";
-const contentTypes = ["image", "video", "article", "audio", "tweet", "post"];
+const contentTypes = ["image", "youtube", "article", "audio", "twitter", "post"];
 
 const contentSchema = new mongoose.Schema({
   link: { type: String, required: true },
