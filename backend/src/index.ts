@@ -190,7 +190,7 @@ app.get("/api/v1/content", authMiddleware, async (req, res) => {
   //@ts-ignore
   const userId = req.userId;
   try {
-    const contentDocs = await Content.find({ userId });
+    const contentDocs = await Content.find({ userId }).populate("tags", "title");
 
     return res.status(200).json({
       success: true,
@@ -237,9 +237,11 @@ app.delete("/api/v1/content", authMiddleware, async (req, res) => {
     });
   }
 });
+
 app.post("/api/v1/brain/share", authMiddleware, async (req, res) => {
   //@ts-ignore
   const userId = req.userId;
+  const share = req.body.share;
   try {
     const contentDocs = await Content.find({ userId });
     if (!contentDocs || contentDocs.length === 0) {
@@ -248,28 +250,42 @@ app.post("/api/v1/brain/share", authMiddleware, async (req, res) => {
         .json({ success: false, message: "No content to share" });
     }
 
-    const token = crypto.randomUUID();
+    if (share) {
+      const existingLink = await Link.findOne({ userId });
+      if (existingLink) {
+        return res.status(200).json({
+          success: true,
+          message: "Share link generated",
+          link: `${process.env.FRONTEND_URL}/share/${existingLink.hash}`,
+        });
+      }
 
-    let link = await Link.findOne({ userId });
-    if (!link) {
-      link = await Link.create({ hash: token, userId });
+      const token = crypto.randomUUID();
+      await Link.create({
+        hash: token,
+        userId: userId,
+      });
+      return res.status(200).json({
+        success: true,
+        message: "Share link generated",
+        link: `${process.env.FRONTEND_URL}/share/${token}`,
+      });
     } else {
-      link.hash = token;
+      await Link.deleteOne({ userId });
+      return res.status(200).json({
+        success: true,
+        mesage: "Sharing of brain stopped",
+      });
     }
-    await link.save();
-
-    return res.status(200).json({
-      success: true,
-      link: `${process.env.FRONTEND_URL}/share/${token}`,
-    });
   } catch (error) {
     console.error("Server error while generating share link ", error);
     return res.status(500).json({
-      success: true,
-      message: "Server errir while generating share link",
+      success: false,
+      message: "Server error while generating share link",
     });
   }
 });
+
 app.get("/api/v1/brain/:token", async (req, res) => {
   try {
     const { token } = req.params;
@@ -286,7 +302,7 @@ app.get("/api/v1/brain/:token", async (req, res) => {
     }
 
     //@ts-ignore
-    const contentDocs = await Content.find({ userId: link.userId._id });
+    const contentDocs = await Content.find({ userId: link.userId._id }).populate("tags", "title");
 
     return res.status(200).json({
       success: true,
