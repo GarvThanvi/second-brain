@@ -11,6 +11,7 @@ import Tag from "./models/tag.model.js";
 import * as crypto from "crypto";
 import mongoose from "mongoose";
 import Link from "./models/link.model.js";
+import cors from "cors"
 dotenv.config();
 
 const app = express();
@@ -18,6 +19,7 @@ connectDB();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
+app.use(cors());
 
 const signUpSchema = z.object({
   username: z
@@ -54,7 +56,7 @@ type UserType = z.infer<typeof signUpSchema>;
 app.post("/api/v1/signup", async (req, res) => {
   try {
     const result: any = signUpSchema.safeParse(req.body);
-
+    
     if (!result.success) {
       return res.status(411).json({
         success: false,
